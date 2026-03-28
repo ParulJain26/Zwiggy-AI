@@ -1,7 +1,11 @@
 import { GoogleGenAI, GenerateContentResponse } from "@google/genai";
 import { VEG_FOOD_IMAGES, NON_VEG_FOOD_IMAGES } from "../constants";
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
+const getApiKey = () => {
+  return (import.meta as any).env?.VITE_GEMINI_API_KEY || process.env.GEMINI_API_KEY || '';
+};
+
+const ai = new GoogleGenAI({ apiKey: getApiKey() });
 
 // Helper to pick a consistent image from the pool based on restaurant name
 const getAestheticImage = (name: string, diet: string) => {
