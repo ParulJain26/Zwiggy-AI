@@ -118,6 +118,8 @@ export async function discoverFood(
   `;
 
   try {
+    // Attempt 1: With Google Maps grounding
+    console.log("Attempting search with Google Maps grounding...");
     const response: GenerateContentResponse = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
       contents: prompt,
@@ -138,20 +140,26 @@ export async function discoverFood(
 
     return processResponse(response, query, diet);
   } catch (error: any) {
-    console.error("Error discovering food with Gemini (with tools):", error);
+    const errorMsg = error.message || String(error);
+    console.error("Gemini Search Error:", errorMsg);
     
-    // Fallback: If 429 (quota) or other tool-related error, retry without tools
-    if (error.message?.includes('429') || error.message?.includes('quota') || error.message?.includes('RESOURCE_EXHAUSTED')) {
-      console.log("Retrying without tools due to quota limits...");
+    // If it's a quota error (429) or a tool-related error, fallback to basic search
+    if (
+      errorMsg.includes('429') || 
+      errorMsg.includes('quota') || 
+      errorMsg.includes('RESOURCE_EXHAUSTED') ||
+      errorMsg.includes('grounding')
+    ) {
+      console.warn("Tool quota exceeded or unavailable. Falling back to basic AI search...");
       try {
         const fallbackResponse: GenerateContentResponse = await ai.models.generateContent({
           model: "gemini-3-flash-preview",
-          contents: prompt + "\n\n(Note: Google Maps tool is currently unavailable, please provide general recommendations based on your knowledge.)",
+          contents: prompt + "\n\n(Note: Please provide recommendations based on your internal knowledge as the real-time maps tool is currently restricted.)",
         });
         return processResponse(fallbackResponse, query, diet);
-      } catch (fallbackError) {
-        console.error("Fallback search also failed:", fallbackError);
-        throw fallbackError;
+      } catch (fallbackError: any) {
+        console.error("Fallback search also failed:", fallbackError.message);
+        throw new Error("Gemini API is currently overloaded or out of quota. Please try again in a few minutes.");
       }
     }
     throw error;
