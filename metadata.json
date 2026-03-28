@@ -1,0 +1,5 @@
+{
+  "name": "Zwiggy AI - Intelligent Food Discovery",
+  "description": "An AI-powered food discovery app for India that understands natural language queries to find the perfect dish.",
+  "requestFramePermissions": ["geolocation"]
+}
