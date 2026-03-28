@@ -63,7 +63,7 @@ export default function App() {
       } else {
         setLocationSuggestions([]);
       }
-    }, 500);
+    }, 800);
 
     return () => clearTimeout(timer);
   }, [manualCity]);
@@ -179,7 +179,13 @@ export default function App() {
     } catch (err: any) {
       if (currentSearchId === searchIdRef.current) {
         console.error("Search failed:", err);
-        setError(err.message || "Something went wrong while searching. Please try again.");
+        let userMessage = "Something went wrong while searching. Please try again.";
+        
+        if (err.message?.includes('429') || err.message?.includes('quota')) {
+          userMessage = "You've hit the Gemini API 'Tool Quota' (Google Maps grounding is limited in the free tier). Please wait 60 seconds and try again.";
+        }
+        
+        setError(userMessage);
       }
     } finally {
       if (currentSearchId === searchIdRef.current) {

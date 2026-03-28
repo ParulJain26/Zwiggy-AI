@@ -55,9 +55,7 @@ export async function getLocationSuggestions(query: string): Promise<LocationSug
       
       Format the output as a simple list where each line is:
       NAME | ADDRESS | LAT | LNG`,
-      config: {
-        tools: [{ googleMaps: {} }],
-      },
+      // Removed googleMaps tool here to save quota for the main food discovery task
     });
 
     const text = response.text || "";
