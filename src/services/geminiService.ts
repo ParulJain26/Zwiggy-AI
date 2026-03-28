@@ -98,27 +98,29 @@ export async function discoverFood(
   cuisine?: string,
   diet?: 'veg' | 'non-veg'
 ): Promise<FoodDiscoveryResponse> {
-  try {
-    const cuisineContext = cuisine ? `Specifically look for ${cuisine} cuisine.` : "";
-    const dietContext = diet === 'veg' 
-      ? "IMPORTANT: Suggest ONLY vegetarian dishes and restaurants that are either pure veg or have excellent veg options. Avoid any meat or fish suggestions."
-      : diet === 'non-veg'
-      ? "Suggest a mix of dishes, including non-vegetarian options if available."
-      : "";
+  const cuisineContext = cuisine ? `Specifically look for ${cuisine} cuisine.` : "";
+  const dietContext = diet === 'veg' 
+    ? "IMPORTANT: Suggest ONLY vegetarian dishes and restaurants that are either pure veg or have excellent veg options. Avoid any meat or fish suggestions."
+    : diet === 'non-veg'
+    ? "Suggest a mix of dishes, including non-vegetarian options if available."
+    : "";
 
+  const prompt = `Find the best specific dishes for this query: "${query}". ${cuisineContext} ${dietContext}
+  Use Google Maps to find real restaurants near the user's location. 
+  Analyze the restaurant data (including reviews and menu snippets) to identify signature or highly-rated dishes that match the user's craving.
+  
+  Provide a friendly response that:
+  1. Explains why these specific dishes match the query.
+  2. Mentions the restaurant name and why that dish is special there.
+  3. Use Markdown for formatting.
+  
+  For each restaurant found, suggest ONE specific signature dish name.
+  `;
+
+  try {
     const response: GenerateContentResponse = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
-      contents: `Find the best specific dishes for this query: "${query}". ${cuisineContext} ${dietContext}
-      Use Google Maps to find real restaurants near the user's location. 
-      Analyze the restaurant data (including reviews and menu snippets) to identify signature or highly-rated dishes that match the user's craving.
-      
-      Provide a friendly response that:
-      1. Explains why these specific dishes match the query.
-      2. Mentions the restaurant name and why that dish is special there.
-      3. Use Markdown for formatting.
-      
-      For each restaurant found, suggest ONE specific signature dish name.
-      `,
+      contents: prompt,
       config: {
         tools: [
           { googleMaps: {} }
@@ -134,42 +136,55 @@ export async function discoverFood(
       },
     });
 
-    const text = response.text || "I couldn't find any specific dish results for your query.";
-    const groundingChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
+    return processResponse(response, query, diet);
+  } catch (error: any) {
+    console.error("Error discovering food with Gemini (with tools):", error);
     
-    // Extract real restaurant data from grounding metadata and try to associate with dishes mentioned in text
-    const dishes: DishSuggestion[] = groundingChunks
-      .filter((chunk: any) => chunk.maps?.uri)
-      .map((chunk: any) => {
-        const restaurantName = chunk.maps.title || "Unknown Restaurant";
-        // We'll try to find if a specific dish was mentioned in the AI text for this restaurant
-        // This is a heuristic since the API doesn't perfectly link chunks to text parts in a simple array
-        
-        // Generate a descriptive dish name based on the query if we can't find one
-        const dishName = query.length < 20 ? query : "Signature Dish";
-
-        // Use the hardcoded aesthetic image pool for high quality and variety
-        const image = getAestheticImage(restaurantName, diet);
-        
-        return {
-          dishName: dishName,
-          restaurantName: restaurantName,
-          mapsUrl: chunk.maps.uri,
-          rating: chunk.maps.rating,
-          description: `Highly recommended at ${restaurantName}. Check their menu for the best version of ${query}.`,
-          price: chunk.maps.priceLevel,
-          image: image,
-          diet: diet
-        };
-      });
-
-    return {
-      explanation: text,
-      dishes,
-      filters: {}
-    };
-  } catch (error) {
-    console.error("Error discovering food with Gemini:", error);
+    // Fallback: If 429 (quota) or other tool-related error, retry without tools
+    if (error.message?.includes('429') || error.message?.includes('quota') || error.message?.includes('RESOURCE_EXHAUSTED')) {
+      console.log("Retrying without tools due to quota limits...");
+      try {
+        const fallbackResponse: GenerateContentResponse = await ai.models.generateContent({
+          model: "gemini-3-flash-preview",
+          contents: prompt + "\n\n(Note: Google Maps tool is currently unavailable, please provide general recommendations based on your knowledge.)",
+        });
+        return processResponse(fallbackResponse, query, diet);
+      } catch (fallbackError) {
+        console.error("Fallback search also failed:", fallbackError);
+        throw fallbackError;
+      }
+    }
     throw error;
   }
+}
+
+function processResponse(response: GenerateContentResponse, query: string, diet?: string): FoodDiscoveryResponse {
+  const text = response.text || "I couldn't find any specific dish results for your query.";
+  const groundingChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
+  
+  // Extract real restaurant data from grounding metadata
+  const dishes: DishSuggestion[] = groundingChunks
+    .filter((chunk: any) => chunk.maps?.uri)
+    .map((chunk: any) => {
+      const restaurantName = chunk.maps.title || "Unknown Restaurant";
+      const dishName = query.length < 20 ? query : "Signature Dish";
+      const image = getAestheticImage(restaurantName, diet || 'non-veg');
+      
+      return {
+        dishName: dishName,
+        restaurantName: restaurantName,
+        mapsUrl: chunk.maps.uri,
+        rating: chunk.maps.rating,
+        description: `Highly recommended at ${restaurantName}. Check their menu for the best version of ${query}.`,
+        price: chunk.maps.priceLevel,
+        image: image,
+        diet: diet
+      };
+    });
+
+  return {
+    explanation: text,
+    dishes,
+    filters: {}
+  };
 }
